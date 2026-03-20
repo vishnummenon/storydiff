@@ -17,6 +17,7 @@ from storydiff.analysis.llm import build_chat_client
 from storydiff.analysis.persistence import set_processing_status
 from storydiff.analysis.settings import load_analysis_settings
 from storydiff.db.session import get_session_local
+from storydiff.ingestion.publisher import SqsPublisher
 from storydiff.qdrant.settings import load_qdrant_settings
 
 logger = logging.getLogger(__name__)
@@ -43,6 +44,7 @@ def process_article_analysis(article_id: int) -> AnalysisState:
             qdrant=qclient,
             qdrant_cfg=qcfg,
             analysis_settings=analysis_settings,
+            events=SqsPublisher(),
         )
         checkpointer = get_postgres_saver_optional()
         graph = build_analysis_graph(deps, checkpointer=checkpointer)

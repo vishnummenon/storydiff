@@ -17,6 +17,7 @@ class IngestionSettings:
     aws_endpoint_url: str | None
     sqs_article_ingested_queue_url: str | None
     sqs_article_analyze_queue_url: str | None
+    sqs_topic_refresh_queue_url: str | None
 
 
 def load_ingestion_settings() -> IngestionSettings:
@@ -25,9 +26,11 @@ def load_ingestion_settings() -> IngestionSettings:
     endpoint = os.environ.get("AWS_ENDPOINT_URL", "").strip() or None
     ingested = os.environ.get("SQS_ARTICLE_INGESTED_QUEUE_URL", "").strip() or None
     analyze = os.environ.get("SQS_ARTICLE_ANALYZE_QUEUE_URL", "").strip() or None
+    topic_refresh = os.environ.get("SQS_TOPIC_REFRESH_QUEUE_URL", "").strip() or None
     return IngestionSettings(
         aws_region=region,
         aws_endpoint_url=endpoint,
         sqs_article_ingested_queue_url=ingested,
         sqs_article_analyze_queue_url=analyze,
+        sqs_topic_refresh_queue_url=topic_refresh,
     )

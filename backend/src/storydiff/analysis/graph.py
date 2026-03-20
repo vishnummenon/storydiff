@@ -24,6 +24,7 @@ from storydiff.analysis.persistence import (
     update_article_category,
     upsert_article_analysis,
 )
+from storydiff.analysis.topic_assignment import TopicRefreshPublisher, assign_article_to_topic
 from storydiff.analysis.prompts import CLASSIFY_SYSTEM, ENTITIES_SYSTEM, SUMMARY_SCORES_SYSTEM
 from storydiff.analysis.qdrant_write import upsert_article_embedding
 from storydiff.analysis.settings import AnalysisSettings
@@ -58,6 +59,8 @@ class AnalysisState(TypedDict, total=False):
     reliability_score: float | None
     polarity_labels_json: dict[str, Any] | None
     model_version: str
+    topic_id: int | None
+    consensus_distance: float | None
 
 
 @dataclass
@@ -68,6 +71,7 @@ class GraphDeps:
     qdrant: QdrantClient
     qdrant_cfg: QdrantSettings
     analysis_settings: AnalysisSettings
+    events: TopicRefreshPublisher
 
 
 def build_analysis_graph(
@@ -81,6 +85,7 @@ def build_analysis_graph(
     qclient = deps.qdrant
     qcfg = deps.qdrant_cfg
     cfg = deps.analysis_settings
+    events = deps.events
     mv = model_version_string(llm)
 
     def n_load(state: AnalysisState) -> dict[str, Any]:
@@ -303,6 +308,44 @@ def build_analysis_graph(
                 "polarity_labels_json": None,
             }
 
+    def n_topic_assign(state: AnalysisState) -> dict[str, Any]:
+        _log_step("topic_assign", state)
+        if state.get("error"):
+            _log_step("topic_assign", state, "skip (prior error)")
+            return {}
+        if "embedding" not in state:
+            logger.info(
+                "analysis step=topic_assign article_id=%s skip (no embedding)",
+                state.get("article_id"),
+            )
+            return {}
+        aid = state["article_id"]
+        article = get_article_for_analysis(s, aid)
+        if article is None:
+            return {"error": "article_not_found"}
+        try:
+            out = assign_article_to_topic(
+                s,
+                article,
+                state["embedding"],
+                state.get("entities") or [],
+                state.get("summary"),
+                qclient=qclient,
+                qcfg=qcfg,
+                cfg=cfg,
+                embedder=emb,
+                events=events,
+            )
+            logger.info(
+                "analysis step=topic_assign article_id=%s result=ok topic_id=%s",
+                aid,
+                out.get("topic_id"),
+            )
+            return out
+        except Exception as e:
+            logger.exception("Topic assignment failed")
+            return {"error": f"topic_assign:{e}"}
+
     def n_persist(state: AnalysisState) -> dict[str, Any]:
         _log_step("persist", state)
         if state.get("error"):
@@ -315,7 +358,7 @@ def build_analysis_graph(
                 s,
                 article_id=aid,
                 summary=state.get("summary"),
-                consensus_distance=None,
+                consensus_distance=state.get("consensus_distance"),
                 framing_polarity=state.get("framing_polarity"),
                 source_diversity_score=state.get("source_diversity_score"),
                 novel_claim_score=state.get("novel_claim_score"),
@@ -402,6 +445,7 @@ def build_analysis_graph(
     builder.add_node("classify", n_classify)
     builder.add_node("entities", n_entities)
     builder.add_node("summary_scores", n_summary_scores)
+    builder.add_node("topic_assign", n_topic_assign)
     builder.add_node("persist", n_persist)
     builder.add_node("qdrant2", n_qdrant2)
     builder.add_node("finalize", n_finalize)
@@ -411,7 +455,8 @@ def build_analysis_graph(
     builder.add_edge("qdrant1", "classify")
     builder.add_edge("classify", "entities")
     builder.add_edge("entities", "summary_scores")
-    builder.add_edge("summary_scores", "qdrant2")
+    builder.add_edge("summary_scores", "topic_assign")
+    builder.add_edge("topic_assign", "qdrant2")
     builder.add_edge("qdrant2", "persist")
     builder.add_edge("persist", "finalize")
     builder.add_edge("finalize", END)

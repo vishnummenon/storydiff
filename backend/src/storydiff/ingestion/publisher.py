@@ -30,6 +30,8 @@ class EventPublisher(Protocol):
 
     def publish_article_analyze(self, payload: dict[str, Any]) -> None: ...
 
+    def publish_topic_refresh(self, payload: dict[str, Any]) -> None: ...
+
 
 class SqsPublisher:
     """Send JSON messages to configured SQS queue URLs."""
@@ -47,6 +49,9 @@ class SqsPublisher:
 
     def publish_article_analyze(self, payload: dict[str, Any]) -> None:
         self._send(self._settings.sqs_article_analyze_queue_url, payload, "article.analyze")
+
+    def publish_topic_refresh(self, payload: dict[str, Any]) -> None:
+        self._send(self._settings.sqs_topic_refresh_queue_url, payload, "topic.refresh")
 
     def _send(self, queue_url: str | None, payload: dict[str, Any], label: str) -> None:
         if not queue_url:
@@ -67,4 +72,7 @@ class NoopPublisher:
         return
 
     def publish_article_analyze(self, payload: dict[str, Any]) -> None:
+        return
+
+    def publish_topic_refresh(self, payload: dict[str, Any]) -> None:
         return

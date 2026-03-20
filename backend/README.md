@@ -77,9 +77,9 @@ Paste the printed queue URLs into `backend/.env` as `SQS_ARTICLE_INGESTED_QUEUE_
 
 Data persists in named volumes (`storydiff_pgdata`, `storydiff_qdrant`, `storydiff_localstack`). Stop with `docker compose down`; remove volumes with `docker compose down -v` (wipes DB, vector store, and LocalStack state).
 
-### Article analysis worker (Phase 2)
+### Article analysis worker (Phase 2–3)
 
-The worker consumes `article.analyze` from `SQS_ARTICLE_ANALYZE_QUEUE_URL`, runs a LangGraph pipeline (embed → Qdrant → classify → entities → summary/scores → Postgres), and refreshes the article point in Qdrant. Set `EMBEDDING_VECTOR_SIZE=384` and (re)create the `article_embeddings` collection if you previously used a different dimension.
+The worker consumes `article.analyze` from `SQS_ARTICLE_ANALYZE_QUEUE_URL`, runs a LangGraph pipeline (embed → Qdrant → classify → entities → summary/scores → **topic assignment** → Qdrant → Postgres), and refreshes the article point in Qdrant. Topic assignment scores candidates from `topic_embeddings`, links the article or creates a topic, writes `topic_article_links` (including `consensus_distance` when a topic vector exists), and publishes `topic.refresh` to `SQS_TOPIC_REFRESH_QUEUE_URL` when that queue is configured. Set `EMBEDDING_VECTOR_SIZE=384` and (re)create the `article_embeddings` and `topic_embeddings` collections if you previously used a different dimension.
 
 - **LLM:** default `LLM_PROVIDER=ollama` with `OLLAMA_MODEL=llama3.1:8b` (OpenAI-compatible API at `OLLAMA_BASE_URL`). Switch to OpenAI with `LLM_PROVIDER=openai` and `OPENAI_API_KEY`.
 - **Embeddings:** default `EMBEDDING_BACKEND=ollama` uses Ollama `POST /api/embeddings` with `OLLAMA_EMBEDDING_MODEL=all-minilm` (384-d). Optional: `uv sync --extra embeddings-st` and `EMBEDDING_BACKEND=sentence_transformers` for Hugging Face `all-MiniLM-L6-v2`.
@@ -88,6 +88,14 @@ Run after [Ollama](https://ollama.com/) is up and models are pulled (`ollama pul
 
 ```bash
 cd backend && uv run python -m storydiff.analysis
+```
+
+### Topic refresh worker (Phase 3)
+
+Consumes `topic.refresh` from `SQS_TOPIC_REFRESH_QUEUE_URL`, locks the topic row, skips if within `TOPIC_REFRESH_COOLDOWN_SECONDS`, loads linked articles in `TOPIC_REFRESH_WINDOW_HOURS`, recomputes consensus (LLM) and `topic_versions`, upserts the topic vector in Qdrant, and backfills `consensus_distance` on `topic_article_links`.
+
+```bash
+cd backend && uv run python -m storydiff.topic_refresh
 ```
 
 **LangGraph checkpointing:** by default (`LANGGRAPH_CHECKPOINT_ENABLED=true`) the analysis graph uses a **Postgres** checkpointer (`langgraph-checkpoint-postgres`) with `thread_id` = `article-analysis-<article_id>`. Tables (`checkpoints`, `checkpoint_blobs`, …) are created on first run via `PostgresSaver.setup()` (same Postgres as `DATABASE_URL`, or set `CHECKPOINT_DATABASE_URL`). Disable with `LANGGRAPH_CHECKPOINT_ENABLED=false` for local experiments without checkpoint tables.

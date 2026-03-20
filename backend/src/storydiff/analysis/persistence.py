@@ -9,7 +9,7 @@ from typing import Any, Sequence
 from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
-from storydiff.db.models import Article, ArticleAnalysis, ArticleEntity, Category
+from storydiff.db.models import Article, ArticleAnalysis, ArticleEntity, Category, TopicArticleLink
 
 
 def _normalize_category_slug(raw: str) -> str:
@@ -131,3 +131,36 @@ def update_article_category(
 
 def get_article_for_analysis(session: Session, article_id: int) -> Article | None:
     return session.scalar(select(Article).where(Article.id == article_id))
+
+
+def delete_topic_links_for_article(session: Session, article_id: int) -> None:
+    session.execute(delete(TopicArticleLink).where(TopicArticleLink.article_id == article_id))
+
+
+def set_article_topic(
+    session: Session,
+    article_id: int,
+    topic_id: int,
+    *,
+    confidence: float,
+    reason: dict[str, Any] | None,
+    consensus_distance: float | None,
+    consensus_distance_topic_version: int | None,
+) -> None:
+    delete_topic_links_for_article(session, article_id)
+    now = datetime.now(timezone.utc)
+    session.execute(
+        update(Article)
+        .where(Article.id == article_id)
+        .values(topic_id=topic_id, updated_at=now)
+    )
+    session.add(
+        TopicArticleLink(
+            topic_id=topic_id,
+            article_id=article_id,
+            assignment_confidence=confidence,
+            assignment_reason_json=reason,
+            consensus_distance=consensus_distance,
+            consensus_distance_topic_version=consensus_distance_topic_version,
+        )
+    )

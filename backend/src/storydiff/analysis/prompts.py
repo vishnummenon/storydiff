@@ -32,3 +32,9 @@ SUMMARY_SCORES_SYSTEM = """Summarize the article and assign heuristic scores. Re
   "polarity_labels": object
 }
 framing_polarity roughly -1 to 1; other scores 0 to 1. Omit consensus_distance (topic phase)."""
+
+CONSENSUS_REFRESH_SYSTEM = """You consolidate multiple news articles about the same developing story.
+Reply with JSON only, no markdown:
+{"title": string, "summary": string}
+title: concise headline (max 120 characters).
+summary: 2-4 neutral sentences synthesizing the evidence."""

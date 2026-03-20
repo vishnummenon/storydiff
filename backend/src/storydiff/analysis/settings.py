@@ -27,6 +27,20 @@ class AnalysisSettings:
     ollama_embedding_model: str
     embedding_model_name: str
     max_text_chars: int
+    # Topic assignment (Phase 3)
+    topic_candidate_top_n: int
+    topic_assign_threshold: float
+    topic_weight_vector: float
+    topic_weight_entities: float
+    topic_weight_category: float
+    topic_weight_time: float
+    topic_weight_recency: float
+    topic_weight_source_diversity: float
+    topic_entity_sample_size: int
+    # Topic refresh worker
+    topic_refresh_window_hours: int
+    topic_refresh_cooldown_seconds: int
+    topic_refresh_min_evidence: int
 
 
 def load_analysis_settings() -> AnalysisSettings:
@@ -57,6 +71,12 @@ def load_analysis_settings() -> AnalysisSettings:
         ollama_embed = base
     ollama_emb_model = os.environ.get("OLLAMA_EMBEDDING_MODEL", "all-minilm").strip()
 
+    def _f(name: str, default: str) -> float:
+        return float(os.environ.get(name, default).strip())
+
+    def _i(name: str, default: str) -> int:
+        return int(os.environ.get(name, default).strip())
+
     return AnalysisSettings(
         llm_provider=provider,
         ollama_base_url=ollama_base,
@@ -69,4 +89,16 @@ def load_analysis_settings() -> AnalysisSettings:
         ollama_embedding_model=ollama_emb_model,
         embedding_model_name=emb,
         max_text_chars=max_chars,
+        topic_candidate_top_n=_i("TOPIC_CANDIDATE_TOP_N", "20"),
+        topic_assign_threshold=_f("TOPIC_ASSIGN_THRESHOLD", "0.45"),
+        topic_weight_vector=_f("TOPIC_WEIGHT_VECTOR", "0.35"),
+        topic_weight_entities=_f("TOPIC_WEIGHT_ENTITIES", "0.2"),
+        topic_weight_category=_f("TOPIC_WEIGHT_CATEGORY", "0.15"),
+        topic_weight_time=_f("TOPIC_WEIGHT_TIME", "0.1"),
+        topic_weight_recency=_f("TOPIC_WEIGHT_RECENCY", "0.1"),
+        topic_weight_source_diversity=_f("TOPIC_WEIGHT_SOURCE_DIVERSITY", "0.1"),
+        topic_entity_sample_size=_i("TOPIC_ENTITY_SAMPLE_SIZE", "40"),
+        topic_refresh_window_hours=_i("TOPIC_REFRESH_WINDOW_HOURS", "720"),
+        topic_refresh_cooldown_seconds=_i("TOPIC_REFRESH_COOLDOWN_SECONDS", "120"),
+        topic_refresh_min_evidence=_i("TOPIC_REFRESH_MIN_EVIDENCE", "1"),
     )

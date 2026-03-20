@@ -148,6 +148,9 @@ class Topic(Base):
     source_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
     current_reliability_score: Mapped[Optional[float]] = mapped_column(Numeric(6, 4))
     current_consensus_version: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("1"))
+    last_consensus_refresh_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -191,6 +194,8 @@ class TopicArticleLink(Base):
     assigned_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+    consensus_distance: Mapped[Optional[float]] = mapped_column(Numeric(6, 4), nullable=True)
+    consensus_distance_topic_version: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
 
 class MediaAggregate(Base):

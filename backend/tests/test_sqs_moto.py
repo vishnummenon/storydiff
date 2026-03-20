@@ -22,6 +22,7 @@ def test_sqs_publisher_sends_json_message():
         aws_endpoint_url=None,
         sqs_article_ingested_queue_url=ingested_url,
         sqs_article_analyze_queue_url=analyze_url,
+        sqs_topic_refresh_queue_url=None,
     )
 
     pub = SqsPublisher(settings=settings)

@@ -23,6 +23,18 @@ def test_embed_text_ollama_returns_384() -> None:
         ollama_embedding_model="all-minilm",
         embedding_model_name="sentence-transformers/all-MiniLM-L6-v2",
         max_text_chars=12000,
+        topic_candidate_top_n=20,
+        topic_assign_threshold=0.45,
+        topic_weight_vector=0.35,
+        topic_weight_entities=0.2,
+        topic_weight_category=0.15,
+        topic_weight_time=0.1,
+        topic_weight_recency=0.1,
+        topic_weight_source_diversity=0.1,
+        topic_entity_sample_size=40,
+        topic_refresh_window_hours=720,
+        topic_refresh_cooldown_seconds=120,
+        topic_refresh_min_evidence=1,
     )
     vec = [0.0] * 384
     mock_resp = MagicMock()
