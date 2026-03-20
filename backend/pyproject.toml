@@ -17,7 +17,16 @@ dependencies = [
     "fastapi>=0.115,<1",
     "uvicorn[standard]>=0.32,<1",
     "boto3>=1.35,<2",
+    "langgraph>=0.2,<1",
+    "langchain-core>=0.3,<1",
+    "openai>=1.0,<2",
+    "httpx>=0.28,<1",
+    "langgraph-checkpoint-postgres>=2.0,<3",
 ]
+
+[project.optional-dependencies]
+# Optional: Hugging Face `all-MiniLM-L6-v2` (requires PyTorch wheels for your platform).
+embeddings-st = ["sentence-transformers>=3.0,<4"]
 
 [dependency-groups]
 dev = ["pytest>=8", "httpx>=0.28,<1", "moto[sqs]>=5.0,<6"]
