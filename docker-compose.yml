@@ -18,6 +18,17 @@ services:
     volumes:
       - storydiff_qdrant:/qdrant/storage
 
+  localstack:
+    image: localstack/localstack:3
+    ports:
+      - "4566:4566"
+    environment:
+      SERVICES: sqs
+      DEBUG: "0"
+    volumes:
+      - storydiff_localstack:/var/lib/localstack
+
 volumes:
   storydiff_pgdata:
   storydiff_qdrant:
+  storydiff_localstack:

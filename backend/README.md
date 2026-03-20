@@ -40,14 +40,19 @@ Or activate `.venv` and use `alembic` / `python` normally.
 
 - **ORM models:** `from storydiff.db import Base` and model classes (`MediaOutlet`, `Article`, …) exported from `storydiff.db`.
 - **Qdrant:** `storydiff.qdrant` — settings, payload field names, `ensure_collections()`.
+- **HTTP API:** `storydiff.main:app` — FastAPI app with `POST /api/v1/ingest` (article ingestion + SQS events).
 
 ## Environment
 
-Copy `.env.example` to `.env` in `backend/` and set values (never commit secrets). `DATABASE_URL` uses the SQLAlchemy URL form for psycopg v3, e.g. `postgresql+psycopg://USER:PASSWORD@HOST:5432/DBNAME`.
+Copy `.env.example` to `.env` in `backend/` and set values (never commit secrets). `DATABASE_URL` uses the SQLAlchemy URL form for psycopg v3, e.g. `postgresql+psycopg://USER:PASSWORD@HOST:PORT/DBNAME`.
 
 **Alembic** loads `backend/.env` automatically via `python-dotenv`, so `uv run alembic …` picks up `DATABASE_URL` without `export`. Variables already set in your shell still win over `.env`.
 
-## Docker Compose (local Postgres + Qdrant)
+### Ingestion / SQS
+
+Ingestion publishes `article.ingested` and (when not a duplicate) `article.analyze` to the queues named in `SQS_ARTICLE_INGESTED_QUEUE_URL` and `SQS_ARTICLE_ANALYZE_QUEUE_URL`. Set `AWS_ENDPOINT_URL` to point boto3 at [LocalStack](https://docs.localstack.cloud/) (e.g. `http://localhost:4566`) in local dev. Dummy credentials (`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`) are fine for LocalStack.
+
+## Docker Compose (local Postgres + Qdrant + LocalStack)
 
 From the **repository root** (where `docker-compose.yml` lives):
 
@@ -57,10 +62,44 @@ docker compose up -d
 
 This starts:
 
-- **Postgres** — `localhost:5432` (user/password/db match `backend/.env.example`)
+- **Postgres** — host port **`5434`** → container `5432` (user/password/db match `backend/.env.example` when using that port)
 - **Qdrant** — REST and dashboard on `http://localhost:6333`, gRPC on `6334`
+- **LocalStack** — SQS on **`http://localhost:4566`**
 
-Data persists in named volumes (`storydiff_pgdata`, `storydiff_qdrant`). Stop with `docker compose down`; remove volumes with `docker compose down -v` (wipes DB and vector store).
+Create the ingestion queues once (requires [AWS CLI](https://aws.amazon.com/cli/)):
+
+```bash
+chmod +x scripts/localstack-init-sqs.sh   # once
+./scripts/localstack-init-sqs.sh
+```
+
+Paste the printed queue URLs into `backend/.env` as `SQS_ARTICLE_INGESTED_QUEUE_URL` and `SQS_ARTICLE_ANALYZE_QUEUE_URL`.
+
+Data persists in named volumes (`storydiff_pgdata`, `storydiff_qdrant`, `storydiff_localstack`). Stop with `docker compose down`; remove volumes with `docker compose down -v` (wipes DB, vector store, and LocalStack state).
+
+## HTTP API (dev)
+
+With migrations applied and `DATABASE_URL` set:
+
+```bash
+uv run uvicorn storydiff.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+- Health: `GET http://127.0.0.1:8000/health`
+- Ingest: `POST http://127.0.0.1:8000/api/v1/ingest` (JSON body per `architecture/api_contract.md` §8.1)
+
+## Tests
+
+```bash
+uv run pytest
+```
+
+Pure unit tests (dedupe helpers, moto SQS) run without Postgres. **`tests/ingest_api/`** exercises `POST /api/v1/ingest` against PostgreSQL and is **skipped** if the DB is unreachable. Point it at Compose Postgres with:
+
+```bash
+export TEST_DATABASE_URL=postgresql+psycopg://postgres:postgres@127.0.0.1:5434/storydiff
+uv run pytest
+```
 
 ## Postgres (dev)
 
