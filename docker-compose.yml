@@ -1,0 +1,23 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: storydiff
+    ports:
+      - "5434:5432"
+    volumes:
+      - storydiff_pgdata:/var/lib/postgresql/data
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - storydiff_qdrant:/qdrant/storage
+
+volumes:
+  storydiff_pgdata:
+  storydiff_qdrant:
