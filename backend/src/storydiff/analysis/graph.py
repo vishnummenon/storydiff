@@ -18,6 +18,7 @@ from storydiff.analysis.json_utils import parse_json_object
 from storydiff.analysis.llm import ChatClient, model_version_string
 from storydiff.analysis.persistence import (
     get_article_for_analysis,
+    get_or_create_category,
     replace_article_entities,
     set_processing_status,
     update_article_category,
@@ -161,39 +162,64 @@ def build_analysis_graph(
             _log_step("classify", state, "skip (prior error)")
             return {}
         cats = s.scalars(select(Category).where(Category.is_active == True)).all()  # noqa: E712
-        if not cats:
-            logger.info(
-                "analysis step=classify article_id=%s result=skip no_categories_in_db",
-                state.get("article_id"),
+        body = state["text"][:8000]
+        if cats:
+            lines = "\n".join(f"- slug={c.slug!r} id={c.id}" for c in cats)
+            user = f"Existing categories:\n{lines}\n\nArticle:\n{body}"
+        else:
+            user = (
+                "No categories exist in the database yet. Propose exactly one new "
+                "category for this article (slug + name in JSON).\n\n"
+                f"Article:\n{body}"
             )
-            return {"category_id": None}
-        lines = "\n".join(f"- slug={c.slug!r} id={c.id}" for c in cats)
-        user = f"Categories:\n{lines}\n\nArticle:\n{state['text'][:8000]}"
         try:
             raw = llm.complete_json_system_user(CLASSIFY_SYSTEM, user)
             data = parse_json_object(raw)
             slug = data.get("category_slug")
-            if slug is None:
+            new_cat = data.get("new_category")
+            nc_slug: str | None = None
+            nc_name: str | None = None
+            if isinstance(new_cat, dict):
+                nc_slug = new_cat.get("slug")
+                nc_name = new_cat.get("name")
+                if nc_slug is not None:
+                    nc_slug = str(nc_slug)
+                if nc_name is not None:
+                    nc_name = str(nc_name)
+
+            if slug is not None:
+                slug = str(slug).strip()
+            if slug:
+                for c in cats:
+                    if c.slug == slug:
+                        update_article_category(s, state["article_id"], c.id)
+                        s.flush()
+                        logger.info(
+                            "analysis step=classify article_id=%s result=ok category_id=%s slug=%s",
+                            state["article_id"],
+                            c.id,
+                            c.slug,
+                        )
+                        return {"category_id": c.id}
+                # slug from model but not in list — treat as new category proposal
+                if nc_slug is None and nc_name is None:
+                    nc_slug, nc_name = slug, slug.replace("-", " ").title()
+
+            if nc_slug and nc_name:
+                c = get_or_create_category(s, nc_slug, nc_name)
+                update_article_category(s, state["article_id"], c.id)
+                s.flush()
                 logger.info(
-                    "analysis step=classify article_id=%s result=null_slug",
+                    "analysis step=classify article_id=%s result=ok category_id=%s slug=%s",
                     state["article_id"],
+                    c.id,
+                    c.slug,
                 )
-                return {"category_id": None}
-            for c in cats:
-                if c.slug == slug:
-                    update_article_category(s, state["article_id"], c.id)
-                    s.flush()
-                    logger.info(
-                        "analysis step=classify article_id=%s result=ok category_id=%s slug=%s",
-                        state["article_id"],
-                        c.id,
-                        c.slug,
-                    )
-                    return {"category_id": c.id}
+                return {"category_id": c.id}
+
             logger.info(
-                "analysis step=classify article_id=%s result=no_match category_slug=%r",
+                "analysis step=classify article_id=%s result=missing_category_fields",
                 state["article_id"],
-                slug,
             )
         except Exception as e:
             logger.warning("Classification failed: %s", e)

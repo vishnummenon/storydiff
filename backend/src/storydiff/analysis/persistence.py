@@ -2,13 +2,44 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
 from typing import Any, Sequence
 
 from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
-from storydiff.db.models import Article, ArticleAnalysis, ArticleEntity
+from storydiff.db.models import Article, ArticleAnalysis, ArticleEntity, Category
+
+
+def _normalize_category_slug(raw: str) -> str:
+    s = (raw or "").lower().strip()
+    s = re.sub(r"[^a-z0-9]+", "-", s)
+    s = s.strip("-")[:100]
+    return s or "general"
+
+
+def get_or_create_category(session: Session, slug: str, name: str) -> Category:
+    """Return category by normalized slug, or insert a new row and return it."""
+    norm_slug = _normalize_category_slug(slug)
+    existing = session.scalar(select(Category).where(Category.slug == norm_slug))
+    if existing is not None:
+        return existing
+    base_name = (name or "").strip() or norm_slug.replace("-", " ").title()
+    base_name = base_name[:255]
+    if session.scalar(select(Category.id).where(Category.name == base_name)):
+        base_name = f"{norm_slug.replace('-', ' ').title()}"[:255]
+        if session.scalar(select(Category.id).where(Category.name == base_name)):
+            base_name = f"{norm_slug.replace('-', ' ').title()} ({norm_slug})"[:255]
+    cat = Category(
+        slug=norm_slug,
+        name=base_name,
+        display_order=0,
+        is_active=True,
+    )
+    session.add(cat)
+    session.flush()
+    return cat
 
 
 def set_processing_status(

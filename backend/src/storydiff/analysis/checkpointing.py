@@ -7,6 +7,7 @@ import os
 import threading
 from typing import TYPE_CHECKING
 
+from psycopg import errors as psycopg_errors
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
@@ -51,6 +52,60 @@ def analysis_thread_id(article_id: int) -> str:
     return f"article-analysis-{int(article_id)}"
 
 
+def _insert_next_checkpoint_migration_version(pool: ConnectionPool) -> bool:
+    """Insert a single ``checkpoint_migrations`` row if behind ``len(MIGRATIONS)-1``.
+
+    Returns True if a row was inserted (or attempted). Used when ``setup()`` hits
+    ``DuplicateColumn`` because DDL ran but the journal row for that step was not recorded.
+    """
+    from langgraph.checkpoint.postgres.base import BasePostgresSaver
+
+    expected_last = len(BasePostgresSaver.MIGRATIONS) - 1
+    with pool.connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT COALESCE(MAX(v), -1) AS max_v FROM checkpoint_migrations"
+            )
+            row = cur.fetchone()
+            max_v = int(row["max_v"]) if row is not None else -1
+            if max_v >= expected_last:
+                return False
+            next_v = max_v + 1
+            cur.execute(
+                "INSERT INTO checkpoint_migrations (v) VALUES (%s) ON CONFLICT (v) DO NOTHING",
+                (next_v,),
+            )
+            return True
+
+
+def _run_postgres_saver_setup(saver: PostgresSaver, pool: ConnectionPool) -> None:
+    """Run ``PostgresSaver.setup()``; repair migration journal on duplicate DDL errors."""
+    max_attempts = 12
+    for attempt in range(max_attempts):
+        try:
+            saver.setup()
+            return
+        except psycopg_errors.DuplicateColumn as e:
+            logger.warning(
+                "LangGraph checkpoint setup DuplicateColumn (attempt %s/%s): %s — "
+                "bumping migration journal if possible",
+                attempt + 1,
+                max_attempts,
+                e,
+            )
+            if not _insert_next_checkpoint_migration_version(pool):
+                raise
+        except psycopg_errors.DuplicateTable as e:
+            logger.warning(
+                "LangGraph checkpoint setup DuplicateTable (attempt %s/%s): %s",
+                attempt + 1,
+                max_attempts,
+                e,
+            )
+            if not _insert_next_checkpoint_migration_version(pool):
+                raise
+
+
 def get_postgres_saver() -> PostgresSaver:
     """Singleton ``PostgresSaver`` backed by a connection pool; calls ``setup()`` once."""
     global _pool, _saver
@@ -63,7 +118,7 @@ def get_postgres_saver() -> PostgresSaver:
 
         conninfo = get_checkpoint_conninfo()
         logger.info("LangGraph checkpoint: connecting PostgresSaver (%s)", conninfo.split("@")[-1])
-        _pool = ConnectionPool(
+        pool = ConnectionPool(
             conninfo=conninfo,
             kwargs={
                 "autocommit": True,
@@ -73,8 +128,17 @@ def get_postgres_saver() -> PostgresSaver:
             min_size=1,
             max_size=int(os.environ.get("LANGGRAPH_CHECKPOINT_POOL_MAX", "5")),
         )
-        _saver = PostgresSaver(_pool)
-        _saver.setup()
+        saver = PostgresSaver(pool)
+        try:
+            _run_postgres_saver_setup(saver, pool)
+        except Exception:
+            try:
+                pool.close()
+            except Exception:
+                logger.exception("Error closing checkpoint pool after failed setup")
+            raise
+        _pool = pool
+        _saver = saver
         logger.info("LangGraph checkpoint tables ready")
         return _saver
 
