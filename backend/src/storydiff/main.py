@@ -5,12 +5,15 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 
+from storydiff.core_api.exceptions import CoreApiError
+from storydiff.core_api.router import router as core_read_router
 from storydiff.ingestion.exceptions import IngestionClientError
 from storydiff.ingestion.envelope import error_response
 from storydiff.ingestion.router import router as ingest_router
 
 app = FastAPI(title="StoryDiff API", version="0.1.0")
 app.include_router(ingest_router, prefix="/api/v1")
+app.include_router(core_read_router, prefix="/api/v1")
 
 
 @app.get("/health")
@@ -20,6 +23,11 @@ def health() -> dict[str, str]:
 
 @app.exception_handler(IngestionClientError)
 async def ingestion_client_error_handler(_request, exc: IngestionClientError):
+    return error_response(exc.code, exc.message, exc.status_code)
+
+
+@app.exception_handler(CoreApiError)
+async def core_api_error_handler(_request, exc: CoreApiError):
     return error_response(exc.code, exc.message, exc.status_code)
 
 

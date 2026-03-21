@@ -40,7 +40,7 @@ Or activate `.venv` and use `alembic` / `python` normally.
 
 - **ORM models:** `from storydiff.db import Base` and model classes (`MediaOutlet`, `Article`, …) exported from `storydiff.db`.
 - **Qdrant:** `storydiff.qdrant` — settings, payload field names, `ensure_collections()`.
-- **HTTP API:** `storydiff.main:app` — FastAPI app with `POST /api/v1/ingest` (article ingestion + SQS events).
+- **HTTP API:** `storydiff.main:app` — FastAPI app with `POST /api/v1/ingest` and Core Read `GET` routes under `/api/v1` (feed, topics, media, search, categories).
 
 ## Environment
 
@@ -110,6 +110,14 @@ uv run uvicorn storydiff.main:app --reload --host 127.0.0.1 --port 8000
 
 - Health: `GET http://127.0.0.1:8000/health`
 - Ingest: `POST http://127.0.0.1:8000/api/v1/ingest` (JSON body per `architecture/api_contract.md` §8.1)
+- Core read (envelope `data` / `meta` / `error` per §Common Response Envelope):
+  - `GET /api/v1/categories`
+  - `GET /api/v1/feed` — optional query params: `category`, `limit_per_category`, `include_empty_categories`
+  - `GET /api/v1/topics/{topicId}` — `include_articles`, `include_timeline_preview`
+  - `GET /api/v1/topics/{topicId}/timeline`
+  - `GET /api/v1/media` — `window`, `category`, `limit`, `sort_by`
+  - `GET /api/v1/media/{mediaId}`
+  - `GET /api/v1/search` — required `q`; optional `mode` (`keyword` \| `semantic` \| `hybrid`), `type` (`topics` \| `articles` \| `all`), `category`, `from`, `to`, `limit`. Keyword mode uses Postgres only; semantic/hybrid need `QDRANT_URL` and `EMBEDDING_VECTOR_SIZE` (and a working embedding backend).
 
 ## Tests
 
@@ -117,7 +125,7 @@ uv run uvicorn storydiff.main:app --reload --host 127.0.0.1 --port 8000
 uv run pytest
 ```
 
-Pure unit tests (dedupe helpers, moto SQS) run without Postgres. **`tests/ingest_api/`** exercises `POST /api/v1/ingest` against PostgreSQL and is **skipped** if the DB is unreachable. Point it at Compose Postgres with:
+Pure unit tests (dedupe helpers, moto SQS) run without Postgres. **`tests/ingest_api/`** exercises `POST /api/v1/ingest` against PostgreSQL and is **skipped** if the DB is unreachable. **`tests/core_api/`** covers Core Read GET routes; it requires a **migrated** database (same `TEST_DATABASE_URL` / `alembic upgrade head` as your app schema). Point tests at Compose Postgres with:
 
 ```bash
 export TEST_DATABASE_URL=postgresql+psycopg://postgres:postgres@127.0.0.1:5434/storydiff
