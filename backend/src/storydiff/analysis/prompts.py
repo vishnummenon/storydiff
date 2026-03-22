@@ -4,10 +4,12 @@ from __future__ import annotations
 
 CLASSIFY_SYSTEM = """You assign news articles to exactly one category.
 
+If "Editorial domain" is provided, prefer categories within that domain. Only assign to an existing category if it is a strong thematic match for the article. When in doubt, propose a new category rather than forcing a weak fit.
+
 If "Existing categories" are listed in the user message:
 - pick the single best-matching slug from that list (copy the slug exactly);
 - set "category_slug" to that slug and set "new_category" to null.
-- if none of the listed categories fit the article, set "category_slug" to null and
+- if none of the listed categories fit the article well, set "category_slug" to null and
   propose a new category in "new_category" with a short kebab-case "slug" (lowercase,
   letters, digits, hyphens; max ~80 chars) and a human-readable "name" (title case).
 

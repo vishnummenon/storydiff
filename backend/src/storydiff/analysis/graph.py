@@ -49,6 +49,7 @@ class AnalysisState(TypedDict, total=False):
     article_id: int
     error: str
     text: str
+    source_category: str | None
     embedding: list[float]
     category_id: int | None
     entities: list[dict[str, Any]]
@@ -107,7 +108,7 @@ def build_analysis_graph(
             aid,
             len(text),
         )
-        return {"text": text}
+        return {"text": text, "source_category": article.source_category or None}
 
     def n_embed(state: AnalysisState) -> dict[str, Any]:
         _log_step("embed", state)
@@ -168,12 +169,15 @@ def build_analysis_graph(
             return {}
         cats = s.scalars(select(Category).where(Category.is_active == True)).all()  # noqa: E712
         body = state["text"][:8000]
+        domain_hint = ""
+        if state.get("source_category"):
+            domain_hint = f"Editorial domain: {state['source_category']!r}\n"
         if cats:
             lines = "\n".join(f"- slug={c.slug!r} id={c.id}" for c in cats)
-            user = f"Existing categories:\n{lines}\n\nArticle:\n{body}"
+            user = f"{domain_hint}Existing categories:\n{lines}\n\nArticle:\n{body}"
         else:
             user = (
-                "No categories exist in the database yet. Propose exactly one new "
+                f"{domain_hint}No categories exist in the database yet. Propose exactly one new "
                 "category for this article (slug + name in JSON).\n\n"
                 f"Article:\n{body}"
             )
