@@ -305,6 +305,111 @@ docker compose down -v
 
 ---
 
+## Deployment
+
+Production runs on AWS Lambda (backend) and Vercel (frontend). The deploy pipeline is fully automated via GitHub Actions — every push to `main` builds Docker images, runs database migrations, and updates the Lambda functions.
+
+### Prerequisites
+
+- [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/install-cliv2.html) configured with credentials that have IAM, Lambda, ECR, SQS, and SSM permissions
+- [Terraform](https://developer.hashicorp.com/terraform/install) ≥ 1.6
+- [uv](https://docs.astral.sh/uv/) (for local dev)
+
+### One-time Bootstrap
+
+**1. Create the Terraform state bucket**
+
+```bash
+aws s3 mb s3://storydiff-tf-state --region us-east-1
+```
+
+**2. Provision ECR repositories first** (needed before images can be pushed)
+
+```bash
+cd infra
+terraform init
+terraform apply -target=aws_ecr_repository.repos
+```
+
+**3. Push initial images** (trigger the GitHub Actions deploy workflow, or push manually)
+
+The deploy workflow will push the first real images. Lambda functions are created with a `:latest` placeholder and will only work after images are pushed.
+
+**4. Provision remaining infrastructure**
+
+```bash
+terraform apply
+```
+
+This creates: Lambda functions, SQS queues + DLQs, IAM roles, SSM parameter placeholders.
+
+**5. Populate SSM secrets**
+
+After `terraform apply`, fill in the real values for each parameter:
+
+```bash
+aws ssm put-parameter --name "/storydiff/database-url" \
+  --value "postgresql+psycopg://user:pass@host:5432/storydiff" \
+  --type SecureString --overwrite
+
+aws ssm put-parameter --name "/storydiff/openai-api-key" \
+  --value "sk-..." --type SecureString --overwrite
+
+aws ssm put-parameter --name "/storydiff/qdrant-url" \
+  --value "https://xxx.qdrant.io" --type SecureString --overwrite
+
+aws ssm put-parameter --name "/storydiff/qdrant-api-key" \
+  --value "..." --type SecureString --overwrite
+
+# Use the queue URLs from `terraform output`
+aws ssm put-parameter --name "/storydiff/sqs-article-analyze-queue-url" \
+  --value "$(terraform output -raw article_analyze_queue_url)" \
+  --type SecureString --overwrite
+
+aws ssm put-parameter --name "/storydiff/sqs-topic-refresh-queue-url" \
+  --value "$(terraform output -raw topic_refresh_queue_url)" \
+  --type SecureString --overwrite
+```
+
+**6. Add GitHub repository secrets**
+
+In your GitHub repo → Settings → Secrets → Actions, add:
+
+| Secret | Value |
+|--------|-------|
+| `AWS_ACCESS_KEY_ID` | AWS access key for the deploy IAM user |
+| `AWS_SECRET_ACCESS_KEY` | AWS secret key |
+| `AWS_REGION` | e.g. `us-east-1` |
+| `ECR_REGISTRY` | ECR registry URL (e.g. `123456789.dkr.ecr.us-east-1.amazonaws.com`) |
+
+**7. Connect Vercel to this repo**
+
+In [Vercel](https://vercel.com), import this repository, set the root directory to `web/`, and add the environment variable:
+
+```
+BACKEND_URL=<value of `terraform output api_function_url`>
+```
+
+### Ongoing Workflow
+
+After bootstrap, everything is automated:
+
+- **Push to `dev`** → runs backend CI (lint + test) and frontend CI (lint + build)
+- **Push to `main`** → runs CI, then builds Docker images, runs Alembic migrations, and deploys all three Lambda functions
+- **Vercel** auto-deploys the frontend on every push to `main`
+
+### Running Migrations Manually
+
+```bash
+aws lambda invoke \
+  --function-name storydiff-api \
+  --payload '{"action":"migrate"}' \
+  --cli-binary-format raw-in-base64-out \
+  /tmp/response.json && cat /tmp/response.json
+```
+
+---
+
 ## Architecture Documentation
 
 The `architecture/` directory contains detailed design specifications:

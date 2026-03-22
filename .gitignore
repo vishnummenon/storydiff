@@ -12,3 +12,9 @@ build/
 # Next.js (web/)
 web/.next/
 web/node_modules/
+
+# Terraform
+infra/.terraform/
+infra/*.tfstate
+infra/*.tfstate.backup
+infra/*.tfplan
