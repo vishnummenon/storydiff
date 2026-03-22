@@ -43,12 +43,17 @@ def run_worker(*, wait_seconds: int = 20, max_messages: int = 1) -> None:
 
     logger.info("Topic refresh worker polling %s", queue_url)
     while not _stop:
-        resp = client.receive_message(
-            QueueUrl=queue_url,
-            MaxNumberOfMessages=max_messages,
-            WaitTimeSeconds=wait_seconds,
-            VisibilityTimeout=600,
-        )
+        try:
+            resp = client.receive_message(
+                QueueUrl=queue_url,
+                MaxNumberOfMessages=max_messages,
+                WaitTimeSeconds=wait_seconds,
+                VisibilityTimeout=600,
+            )
+        except Exception:
+            if _stop:
+                break
+            raise
         messages = resp.get("Messages") or []
         if not messages:
             continue

@@ -22,6 +22,7 @@ dependencies = [
     "openai>=1.0,<2",
     "httpx>=0.28,<1",
     "langgraph-checkpoint-postgres>=2.0,<3",
+    "mangum>=0.17,<1",
 ]
 
 [project.optional-dependencies]
@@ -29,7 +30,12 @@ dependencies = [
 embeddings-st = ["sentence-transformers>=3.0,<4"]
 
 [dependency-groups]
-dev = ["pytest>=8", "httpx>=0.28,<1", "moto[sqs]>=5.0,<6"]
+dev = [
+    "pytest>=8",
+    "httpx>=0.28,<1",
+    "moto[sqs]>=5.0,<6",
+    "ruff>=0.15.7",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
