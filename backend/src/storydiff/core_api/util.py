@@ -29,13 +29,25 @@ def window_bounds_now(window: str) -> tuple[datetime, datetime]:
 
 
 def polarity_labels_to_list(raw: Any) -> list[str]:
-    """Normalize ``polarity_labels_json`` to a list of strings for API output."""
+    """Normalize ``polarity_labels_json`` to a flat list of label strings for API output.
+
+    Handles two storage shapes:
+    - list  (new): ["pro-military action", "humanitarian concern"]  → returned as-is
+    - dict (legacy): {"negative": ["civilian casualties"], "positive": ["precision strikes"]}
+      → values are flattened; keys (sentiment buckets) are discarded
+    """
     if raw is None:
         return []
     if isinstance(raw, list):
         return [str(x) for x in raw]
     if isinstance(raw, dict):
-        return [str(k) for k in raw.keys()]
+        labels: list[str] = []
+        for v in raw.values():
+            if isinstance(v, list):
+                labels.extend(str(x) for x in v)
+            elif v is not None:
+                labels.append(str(v))
+        return labels
     return []
 
 

@@ -50,6 +50,12 @@ export async function apiGet<T>(path: string, init?: ApiGetInit): Promise<T> {
   } catch {
     throw new ApiError(res.status, "PARSE_ERROR", "Invalid JSON response");
   }
+  if (process.env.API_DEBUG === "1") {
+    console.log(
+      `[api] ${res.status} ${url}\n`,
+      JSON.stringify(json, null, 2),
+    );
+  }
   if (!res.ok) {
     const code = json.error?.code ?? "HTTP_ERROR";
     const msg = json.error?.message ?? res.statusText;

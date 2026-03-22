@@ -29,9 +29,10 @@ SUMMARY_SCORES_SYSTEM = """Summarize the article and assign heuristic scores. Re
   "source_diversity_score": number|null,
   "novel_claim_score": number|null,
   "reliability_score": number|null,
-  "polarity_labels": object
+  "polarity_labels": [string]
 }
-framing_polarity roughly -1 to 1; other scores 0 to 1. Omit consensus_distance (topic phase)."""
+framing_polarity roughly -1 to 1; other scores 0 to 1. Omit consensus_distance (topic phase).
+polarity_labels: a flat list of 2-5 short framing descriptors that characterise how this article frames the story (e.g. "pro-military action", "humanitarian concern", "diplomatic push", "economic impact"). Do NOT use generic sentiment words like "positive" or "negative"."""
 
 CONSENSUS_REFRESH_SYSTEM = """You consolidate multiple news articles about the same developing story.
 Reply with JSON only, no markdown:

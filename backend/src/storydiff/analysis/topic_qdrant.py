@@ -86,7 +86,7 @@ def search_topic_candidates(
         with_payload=True,
     )
     out: list[tuple[int, float]] = []
-    for h in hits:
+    for h in hits.points:
         tid = h.payload.get("topic_id") if h.payload else None
         if tid is None:
             continue

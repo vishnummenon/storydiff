@@ -280,7 +280,7 @@ def build_analysis_graph(
             )
             data = parse_json_object(raw)
             pol = data.get("polarity_labels")
-            if pol is not None and not isinstance(pol, dict):
+            if pol is not None and not isinstance(pol, (dict, list)):
                 pol = None
             out = {
                 "summary": data.get("summary"),

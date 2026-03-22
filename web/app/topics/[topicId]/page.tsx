@@ -14,6 +14,14 @@ type TopicBlock = {
   reliability_score?: number | null;
 };
 
+type ArticleScores = {
+  consensus_distance: number | null;
+  framing_polarity: number | null;
+  source_diversity_score: number | null;
+  novel_claim_score: number | null;
+  reliability_score: number | null;
+};
+
 type ArticleRow = {
   article_id: number;
   title: string;
@@ -21,6 +29,8 @@ type ArticleRow = {
   published_at?: string | null;
   media_outlet?: { name: string; slug: string };
   summary?: string | null;
+  scores?: ArticleScores | null;
+  polarity_labels?: string[];
 };
 
 export default async function TopicPage({
@@ -119,6 +129,72 @@ export default async function TopicPage({
                 ) : null}
                 {a.summary ? (
                   <p className="mt-2 text-sm text-fg-muted line-clamp-3">{a.summary}</p>
+                ) : null}
+                {a.scores ? (
+                  <dl className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs">
+                    {a.scores.consensus_distance != null ? (
+                      <div className="flex items-center gap-1">
+                        <dt className="text-fg-muted">Variance</dt>
+                        <dd className="font-medium tabular-nums">
+                          {(a.scores.consensus_distance * 100).toFixed(0)}%
+                        </dd>
+                      </div>
+                    ) : null}
+                    {a.scores.framing_polarity != null ? (
+                      <div className="flex items-center gap-1">
+                        <dt className="text-fg-muted">Framing</dt>
+                        <dd
+                          className={`font-medium tabular-nums ${
+                            a.scores.framing_polarity > 0.2
+                              ? "text-red-500"
+                              : a.scores.framing_polarity < -0.2
+                                ? "text-blue-500"
+                                : "text-fg-muted"
+                          }`}
+                        >
+                          {a.scores.framing_polarity > 0
+                            ? `+${a.scores.framing_polarity.toFixed(2)}`
+                            : a.scores.framing_polarity.toFixed(2)}
+                        </dd>
+                      </div>
+                    ) : null}
+                    {a.scores.reliability_score != null ? (
+                      <div className="flex items-center gap-1">
+                        <dt className="text-fg-muted">Reliability</dt>
+                        <dd className="font-medium tabular-nums">
+                          {(a.scores.reliability_score * 100).toFixed(0)}%
+                        </dd>
+                      </div>
+                    ) : null}
+                    {a.scores.novel_claim_score != null ? (
+                      <div className="flex items-center gap-1">
+                        <dt className="text-fg-muted">Novel claims</dt>
+                        <dd className="font-medium tabular-nums">
+                          {(a.scores.novel_claim_score * 100).toFixed(0)}%
+                        </dd>
+                      </div>
+                    ) : null}
+                    {a.scores.source_diversity_score != null ? (
+                      <div className="flex items-center gap-1">
+                        <dt className="text-fg-muted">Source diversity</dt>
+                        <dd className="font-medium tabular-nums">
+                          {(a.scores.source_diversity_score * 100).toFixed(0)}%
+                        </dd>
+                      </div>
+                    ) : null}
+                  </dl>
+                ) : null}
+                {a.polarity_labels && a.polarity_labels.length > 0 ? (
+                  <ul className="mt-2 flex flex-wrap gap-1">
+                    {a.polarity_labels.map((label) => (
+                      <li
+                        key={label}
+                        className="rounded-full bg-surface-2 px-2 py-0.5 text-xs text-fg-muted"
+                      >
+                        {label}
+                      </li>
+                    ))}
+                  </ul>
                 ) : null}
               </li>
             ))}
