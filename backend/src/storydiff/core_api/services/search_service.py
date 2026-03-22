@@ -109,9 +109,9 @@ def _semantic_topics(
 
         flt = Filter(must=[FieldCondition(key="category_id", match=MatchValue(value=int(cat.id)))])
 
-    hits = qclient.search(
+    hits = qclient.query_points(
         collection_name=qcfg.topic_collection,
-        query_vector=vec,
+        query=vec,
         limit=limit,
         with_payload=True,
         query_filter=flt,
@@ -156,9 +156,9 @@ def _semantic_articles(
 
         flt = Filter(must=[FieldCondition(key="category_id", match=MatchValue(value=int(cat.id)))])
 
-    hits = qclient.search(
+    hits = qclient.query_points(
         collection_name=qcfg.article_collection,
-        query_vector=vec,
+        query=vec,
         limit=limit,
         with_payload=True,
         query_filter=flt,

@@ -79,9 +79,9 @@ def search_topic_candidates(
     limit: int,
 ) -> list[tuple[int, float]]:
     """Return ``(topic_id, score)`` from Qdrant similarity search (score = similarity)."""
-    hits = client.search(
+    hits = client.query_points(
         collection_name=collection,
-        query_vector=query_vector,
+        query=query_vector,
         limit=limit,
         with_payload=True,
     )
