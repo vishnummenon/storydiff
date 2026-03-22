@@ -1,0 +1,33 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Surfaces (light only — v1) */
+  --surface-0: #f8f7f4;
+  --surface-1: #ffffff;
+  --surface-2: #efeee9;
+  --border: #d9d6cf;
+  --fg: #1c1b18;
+  --fg-muted: #5c5a54;
+  --accent: #0f5f4f;
+  --accent-muted: #1a7d68;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --shadow-sm: 0 1px 2px rgb(28 27 24 / 0.06);
+  --max-content: 72rem;
+  --color-danger-bg: #fef2f2;
+  --color-danger-border: #fecaca;
+  --color-danger-text: #991b1b;
+  --color-danger-muted: #b91c1c;
+}
+
+@layer base {
+  html {
+    @apply scroll-smooth;
+  }
+  body {
+    @apply bg-surface-0 text-fg antialiased;
+    font-family: var(--font-geist-sans), system-ui, sans-serif;
+  }
+}
