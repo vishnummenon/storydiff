@@ -28,6 +28,8 @@ The core insight is that different outlets covering the same story frame it diff
 | Vector Store | Qdrant |
 | Message Queue | AWS SQS (LocalStack for local dev) |
 | Frontend | Next.js 15, React 19, TypeScript, Tailwind CSS |
+| Observability | Netra (OpenTelemetry auto-instrumentation) |
+| LLM Evaluation | DeepEval (offline, LLM-as-judge) |
 | Package Manager (Python) | uv |
 
 ---
@@ -266,6 +268,45 @@ Frontend linting:
 cd web
 npm run lint
 ```
+
+### LLM Evaluation (DeepEval)
+
+The `backend/tests/eval/` directory contains an offline evaluation suite for the AI pipeline, powered by [DeepEval](https://github.com/confident-ai/deepeval). These tests are **excluded from the standard `pytest` run** and must be invoked explicitly. They call the real LLM and use OpenAI (`gpt-4o-mini`) as an LLM judge, so they incur API costs.
+
+```bash
+cd backend
+export OPENAI_API_KEY=sk-...   # required for DeepEval judge
+uv run pytest tests/eval/ -v   # run all eval tests
+uv run pytest tests/eval/test_consensus.py -v  # run a single flow
+```
+
+| Test file | AI flow evaluated | Metrics |
+|-----------|-------------------|---------|
+| `test_classify.py` | Category classification | Exact-match accuracy, GEval (category appropriateness) |
+| `test_entities.py` | Entity extraction | GEval (completeness + no hallucinated entities) |
+| `test_summary_scores.py` | Article summary + variance scores | SummarizationMetric, HallucinationMetric, GEval (score range validity) |
+| `test_consensus.py` | Consensus summary (RAG) | FaithfulnessMetric, AnswerRelevancyMetric, GEval (neutrality) |
+
+Each test file contains hardcoded synthetic article fixtures. The LLM provider for the system under test is controlled by `LLM_PROVIDER` (same as the analysis worker); the judge LLM is always OpenAI.
+
+---
+
+## Observability (Netra)
+
+StoryDiff integrates [Netra](https://getnetra.ai/) for production observability. When `NETRA_API_KEY` is set, Netra auto-instruments LangGraph nodes, LLM calls, Qdrant queries, SQS operations, SQLAlchemy queries, and FastAPI requests — no manual span creation required.
+
+To enable, add to `backend/.env`:
+
+```env
+NETRA_API_KEY=your-api-key-here
+```
+
+Netra is initialized at startup in three entry points:
+- **API server** (`storydiff/main.py`) — service name `storydiff-api`
+- **Analysis worker** (`storydiff/analysis/worker.py`) — service name `storydiff-analysis-worker`
+- **Topic refresh worker** (`storydiff/topic_refresh/worker.py`) — service name `storydiff-topic-refresh-worker`
+
+When `NETRA_API_KEY` is absent or empty, Netra is not loaded and the application runs normally with no overhead.
 
 ---
 
