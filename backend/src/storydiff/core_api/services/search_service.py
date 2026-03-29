@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Any
 
 from qdrant_client import QdrantClient
-from sqlalchemy import or_, select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from storydiff.analysis.embeddings import EmbeddingService
@@ -23,13 +23,11 @@ def _kw_topic(
     dt_to: datetime | None,
     limit: int,
 ) -> list[dict[str, Any]]:
-    pattern = f"%{q}%"
-    stmt = select(Topic).where(
-        or_(
-            Topic.current_title.ilike(pattern),
-            Topic.current_summary.ilike(pattern),
-        )
-    )
+    fts = text(
+        "to_tsvector('english', coalesce(current_title,'') || ' ' || coalesce(current_summary,''))"
+        " @@ plainto_tsquery('english', :q)"
+    ).bindparams(q=q)
+    stmt = select(Topic).where(fts)
     if category_slug is not None:
         stmt = stmt.join(Category, Topic.category_id == Category.id).where(Category.slug == category_slug)
     if dt_from is not None:
@@ -57,11 +55,13 @@ def _kw_articles(
     dt_to: datetime | None,
     limit: int,
 ) -> list[dict[str, Any]]:
-    pattern = f"%{q}%"
+    fts = text(
+        "to_tsvector('english', coalesce(articles.title,'')) @@ plainto_tsquery('english', :q)"
+    ).bindparams(q=q)
     stmt = (
         select(Article, MediaOutlet)
         .join(MediaOutlet, MediaOutlet.id == Article.media_outlet_id)
-        .where(or_(Article.title.ilike(pattern), Article.snippet.ilike(pattern)))
+        .where(fts)
     )
     if category_slug:
         stmt = stmt.join(Category, Article.category_id == Category.id).where(Category.slug == category_slug)

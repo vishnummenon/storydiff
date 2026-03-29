@@ -76,12 +76,27 @@ The system SHALL implement **`GET /api/v1/media/{mediaId}`** per [architecture/a
 
 ### Requirement: GET `/api/v1/search` supports keyword, semantic, and hybrid modes
 
-The system SHALL implement **`GET /api/v1/search`** per [architecture/api_contract.md](../../../architecture/api_contract.md) §8.8. The query parameter **`q`** SHALL be required. Optional parameters SHALL include **`mode`** (`keyword` \| `semantic` \| `hybrid`), **`type`** (`topics` \| `articles` \| `all`), **`category`**, **`from`**, **`to`**, and **`limit`** (default **20**). Keyword mode SHALL query Postgres. Semantic and hybrid modes SHALL use Qdrant collections configured for article and topic embeddings (see [architecture/hld.md](../../../architecture/hld.md) §12.5). The **`data`** object SHALL echo **`query`**, **`mode`**, and **`results`** with **`topics`** and **`articles`** entries including scores where applicable.
+The system SHALL implement **`GET /api/v1/search`** per [architecture/api_contract.md](../../../architecture/api_contract.md) §8.8. The query parameter **`q`** SHALL be required. Optional parameters SHALL include **`mode`** (`keyword` \| `semantic` \| `hybrid`), **`type`** (`topics` \| `articles` \| `all`), **`category`**, **`from`**, **`to`**, and **`limit`** (default **20**). Keyword mode SHALL query Postgres using **`tsvector`**/**`plainto_tsquery`** full-text search (not `ILIKE`). Semantic and hybrid modes SHALL use Qdrant collections configured for article and topic embeddings (see [architecture/hld.md](../../../architecture/hld.md) §12.5). The **`data`** object SHALL echo **`query`**, **`mode`**, and **`results`** with **`topics`** and **`articles`** entries including scores where applicable.
 
 #### Scenario: Keyword-only mode does not require Qdrant
 
 - **WHEN** **`mode`** is **`keyword`**
 - **THEN** the system SHALL return matches from Postgres without requiring a successful Qdrant query
+
+#### Scenario: Keyword mode uses full-text search
+
+- **WHEN** **`mode`** is **`keyword`**
+- **THEN** the system SHALL execute the query using **`tsvector`**/**`plainto_tsquery`** against Postgres and SHALL NOT use **`ILIKE`** pattern matching
+
+#### Scenario: Invalid mode returns 422
+
+- **WHEN** the **`mode`** parameter is provided with a value other than **`keyword`**, **`semantic`**, or **`hybrid`**
+- **THEN** the system SHALL respond with HTTP **422** and a structured error
+
+#### Scenario: Semantic mode without Qdrant returns 503
+
+- **WHEN** **`mode`** is **`semantic`** or **`hybrid`** and the Qdrant service is unavailable
+- **THEN** the system SHALL respond with HTTP **503** and a structured error indicating the vector store is unreachable
 
 ### Requirement: GET `/api/v1/categories` lists active categories
 
