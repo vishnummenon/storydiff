@@ -23,6 +23,7 @@ dependencies = [
     "httpx>=0.28,<1",
     "langgraph-checkpoint-postgres>=2.0,<3",
     "mangum>=0.17,<1",
+    "netra-sdk>=0.1",
 ]
 
 [project.optional-dependencies]
@@ -35,6 +36,7 @@ dev = [
     "httpx>=0.28,<1",
     "moto[sqs]>=5.0,<6",
     "ruff>=0.15.7",
+    "deepeval>=2.0",
 ]
 
 [tool.setuptools.packages.find]
@@ -46,3 +48,4 @@ package = true
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
+addopts = "--ignore=tests/eval"

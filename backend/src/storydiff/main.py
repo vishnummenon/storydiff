@@ -10,6 +10,9 @@ from storydiff.core_api.router import router as core_read_router
 from storydiff.ingestion.exceptions import IngestionClientError
 from storydiff.ingestion.envelope import error_response
 from storydiff.ingestion.router import router as ingest_router
+from storydiff.observability import init_netra
+
+init_netra("storydiff-api")
 
 app = FastAPI(title="StoryDiff API", version="0.1.0")
 app.include_router(ingest_router, prefix="/api/v1")
