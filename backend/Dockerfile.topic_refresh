@@ -1,0 +1,16 @@
+FROM --platform=linux/amd64 public.ecr.aws/lambda/python:3.11
+
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+WORKDIR ${LAMBDA_TASK_ROOT}
+
+# Install dependencies into Lambda task root
+COPY pyproject.toml uv.lock ./
+RUN uv export --frozen --no-dev --no-emit-project -o /tmp/requirements.txt && \
+    pip install -r /tmp/requirements.txt --target ${LAMBDA_TASK_ROOT} --no-cache-dir
+
+# Copy application source
+COPY src/storydiff ./storydiff
+
+CMD ["storydiff.topic_refresh.lambda_handler.lambda_handler"]

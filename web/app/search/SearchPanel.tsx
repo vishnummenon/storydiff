@@ -35,14 +35,22 @@ export function SearchPanel({
   initialQ,
   initialMode,
   initialType,
+  initialCategory,
+  initialFrom,
+  initialTo,
   initialData,
   initialError,
+  categories,
 }: {
   initialQ: string;
   initialMode: string;
   initialType: string;
+  initialCategory: string;
+  initialFrom: string;
+  initialTo: string;
   initialData: unknown;
   initialError: ApiError | null;
+  categories: { slug: string; name: string }[];
 }) {
   const router = useRouter();
   const [q, setQ] = useState(initialQ);
@@ -52,6 +60,9 @@ export function SearchPanel({
   const [type, setType] = useState<ResultType>(
     (initialType as ResultType) || "all",
   );
+  const [category, setCategory] = useState(initialCategory);
+  const [fromDate, setFromDate] = useState(initialFrom);
+  const [toDate, setToDate] = useState(initialTo);
   const [error, setError] = useState<ApiError | null>(initialError);
   const [results, setResults] = useState<SearchPayload | null>(
     initialData && !initialError ? (initialData as SearchPayload) : null,
@@ -59,7 +70,7 @@ export function SearchPanel({
   const [isPending, startTransition] = useTransition();
 
   const run = useCallback(
-    (query: string, m: SearchMode, t: ResultType) => {
+    (query: string, m: SearchMode, t: ResultType, cat: string, from: string, to: string) => {
       const trimmed = query.trim();
       if (!trimmed) {
         setResults(null);
@@ -69,11 +80,10 @@ export function SearchPanel({
       }
       startTransition(async () => {
         setError(null);
-        const params = new URLSearchParams({
-          q: trimmed,
-          mode: m,
-          type: t,
-        });
+        const params = new URLSearchParams({ q: trimmed, mode: m, type: t });
+        if (cat) params.set("category", cat);
+        if (from) params.set("from", from);
+        if (to) params.set("to", to);
         try {
           const data = await browserApiGet<SearchPayload>(
             `/api/v1/search?${params.toString()}`,
@@ -93,7 +103,7 @@ export function SearchPanel({
 
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    run(q, mode, type);
+    run(q, mode, type, category, fromDate, toDate);
   };
 
   return (
@@ -151,6 +161,53 @@ export function SearchPanel({
               <option value="topics">Topics</option>
               <option value="articles">Articles</option>
             </select>
+          </div>
+          {categories.length > 0 && (
+            <div>
+              <label htmlFor="search-category" className="text-xs font-medium text-fg-muted">
+                Category
+              </label>
+              <select
+                id="search-category"
+                name="category"
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                className="mt-1 w-full rounded-md border border-border bg-surface-0 px-3 py-2 text-sm text-fg focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent md:w-40"
+              >
+                <option value="">All categories</option>
+                {categories.map((c) => (
+                  <option key={c.slug} value={c.slug}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+          <div>
+            <label htmlFor="search-from" className="text-xs font-medium text-fg-muted">
+              From
+            </label>
+            <input
+              id="search-from"
+              name="from"
+              type="date"
+              value={fromDate}
+              onChange={(e) => setFromDate(e.target.value)}
+              className="mt-1 w-full rounded-md border border-border bg-surface-0 px-3 py-2 text-sm text-fg shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent md:w-36"
+            />
+          </div>
+          <div>
+            <label htmlFor="search-to" className="text-xs font-medium text-fg-muted">
+              To
+            </label>
+            <input
+              id="search-to"
+              name="to"
+              type="date"
+              value={toDate}
+              onChange={(e) => setToDate(e.target.value)}
+              className="mt-1 w-full rounded-md border border-border bg-surface-0 px-3 py-2 text-sm text-fg shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent md:w-36"
+            />
           </div>
           <button
             type="submit"

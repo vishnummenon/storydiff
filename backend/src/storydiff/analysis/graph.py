@@ -99,7 +99,11 @@ def build_analysis_graph(
         if not article:
             logger.info("analysis step=load article_id=%s result=article_not_found", aid)
             return {"error": "article_not_found"}
-        text = (article.raw_text or article.snippet or article.title or "")[: cfg.max_text_chars]
+        import re as _re
+        raw = article.raw_text or article.snippet or article.title or ""
+        # Strip HTML tags that appear in RSS snippets (e.g. Google News <a> tags)
+        text = _re.sub(r"<[^>]+>", " ", raw).strip()
+        text = text[: cfg.max_text_chars]
         if not text.strip():
             logger.info("analysis step=load article_id=%s result=no_text", aid)
             return {"error": "no_text"}

@@ -13,6 +13,7 @@ import boto3
 
 from storydiff.analysis.checkpointing import close_checkpoint_resources
 from storydiff.ingestion.settings import load_ingestion_settings
+from storydiff.observability import init_netra
 from storydiff.topic_refresh.pipeline import process_topic_refresh_swallow
 
 logger = logging.getLogger(__name__)
@@ -27,6 +28,7 @@ def _handle_sigint(_sig: int, _frame: Any) -> None:
 
 
 def run_worker(*, wait_seconds: int = 20, max_messages: int = 1) -> None:
+    init_netra("storydiff-topic-refresh-worker")
     atexit.register(close_checkpoint_resources)
     settings = load_ingestion_settings()
     queue_url = settings.sqs_topic_refresh_queue_url
@@ -43,12 +45,17 @@ def run_worker(*, wait_seconds: int = 20, max_messages: int = 1) -> None:
 
     logger.info("Topic refresh worker polling %s", queue_url)
     while not _stop:
-        resp = client.receive_message(
-            QueueUrl=queue_url,
-            MaxNumberOfMessages=max_messages,
-            WaitTimeSeconds=wait_seconds,
-            VisibilityTimeout=600,
-        )
+        try:
+            resp = client.receive_message(
+                QueueUrl=queue_url,
+                MaxNumberOfMessages=max_messages,
+                WaitTimeSeconds=wait_seconds,
+                VisibilityTimeout=600,
+            )
+        except Exception:
+            if _stop:
+                break
+            raise
         messages = resp.get("Messages") or []
         if not messages:
             continue

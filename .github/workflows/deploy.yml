@@ -1,0 +1,98 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # ── Build and push images ────────────────────────────────────────────
+
+      - name: Build and push API image
+        run: |
+          IMAGE_URI="${{ secrets.ECR_REGISTRY }}/storydiff-api:${{ github.sha }}"
+          docker build --platform linux/amd64 -f backend/Dockerfile.api -t "$IMAGE_URI" backend/
+          docker push "$IMAGE_URI"
+          echo "API_IMAGE_URI=$IMAGE_URI" >> "$GITHUB_ENV"
+
+      - name: Build and push analysis worker image
+        run: |
+          IMAGE_URI="${{ secrets.ECR_REGISTRY }}/storydiff-analysis-worker:${{ github.sha }}"
+          docker build --platform linux/amd64 -f backend/Dockerfile.analysis -t "$IMAGE_URI" backend/
+          docker push "$IMAGE_URI"
+          echo "ANALYSIS_IMAGE_URI=$IMAGE_URI" >> "$GITHUB_ENV"
+
+      - name: Build and push topic refresh worker image
+        run: |
+          IMAGE_URI="${{ secrets.ECR_REGISTRY }}/storydiff-topic-refresh-worker:${{ github.sha }}"
+          docker build --platform linux/amd64 -f backend/Dockerfile.topic_refresh -t "$IMAGE_URI" backend/
+          docker push "$IMAGE_URI"
+          echo "TOPIC_REFRESH_IMAGE_URI=$IMAGE_URI" >> "$GITHUB_ENV"
+
+      # ── Run migrations before swapping live code ─────────────────────────
+
+      - name: Run Alembic migrations
+        run: |
+          RESPONSE_FILE=$(mktemp)
+          aws lambda invoke \
+            --function-name storydiff-api \
+            --payload '{"action":"migrate"}' \
+            --cli-binary-format raw-in-base64-out \
+            "$RESPONSE_FILE"
+
+          RESPONSE=$(cat "$RESPONSE_FILE")
+          echo "Migration response: $RESPONSE"
+
+          # Fail if Lambda reported a function error
+          if echo "$RESPONSE" | grep -q '"FunctionError"'; then
+            echo "Migration failed — aborting deploy"
+            exit 1
+          fi
+
+          # Fail if response does not contain {"migrated":true}
+          if ! echo "$RESPONSE" | grep -q '"migrated"'; then
+            echo "Unexpected migration response — aborting deploy"
+            exit 1
+          fi
+
+      # ── Update Lambda functions sequentially ─────────────────────────────
+
+      - name: Update API Lambda
+        run: |
+          aws lambda update-function-code \
+            --function-name storydiff-api \
+            --image-uri "$API_IMAGE_URI"
+          aws lambda wait function-updated \
+            --function-name storydiff-api
+
+      - name: Update analysis worker Lambda
+        run: |
+          aws lambda update-function-code \
+            --function-name storydiff-analysis-worker \
+            --image-uri "$ANALYSIS_IMAGE_URI"
+          aws lambda wait function-updated \
+            --function-name storydiff-analysis-worker
+
+      - name: Update topic refresh worker Lambda
+        run: |
+          aws lambda update-function-code \
+            --function-name storydiff-topic-refresh-worker \
+            --image-uri "$TOPIC_REFRESH_IMAGE_URI"
+          aws lambda wait function-updated \
+            --function-name storydiff-topic-refresh-worker

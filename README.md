@@ -1,6 +1,6 @@
 # StoryDiff
 
-StoryDiff is a multi-source narrative variance analyzer. It ingests news articles from curated publishers, clusters them into time-aware topic groups using AI, computes narrative variance metrics per article, and serves the results through read-optimized APIs consumed by a Next.js web frontend.
+StoryDiff is a multi-source narrative variance analyzer. It continuously ingests live news articles from RSS feeds across major outlets, clusters them into time-aware topic groups using AI, computes narrative variance metrics per article, and serves the results through read-optimized APIs consumed by a Next.js web frontend.
 
 The core insight is that different outlets covering the same story frame it differently. StoryDiff surfaces those differences — measuring consensus distance, framing polarity, source diversity, and novel claims — so readers can see not just *what* is being reported, but *how* and *from what angle*.
 
@@ -8,11 +8,12 @@ The core insight is that different outlets covering the same story frame it diff
 
 ## What It Does
 
-1. **Ingests** article metadata via a REST endpoint (idempotent, deduplicated)
-2. **Analyzes** each article asynchronously using a LangGraph AI pipeline: embedding, category classification, entity extraction, topic assignment, summarization, and variance scoring
-3. **Clusters** articles into topics and maintains versioned consensus summaries that evolve as new articles arrive
-4. **Exposes** read-optimized APIs for browsing topics by category, viewing publisher leaderboards, and searching across the corpus
-5. **Renders** all of the above in a server-side-rendered Next.js web app
+1. **Fetches** live articles from configured RSS feeds (major outlets + Google News topic feeds) using `feedparser` and `trafilatura` for full-text extraction
+2. **Ingests** each article via a REST endpoint (idempotent, deduplicated by canonical URL and fingerprint)
+3. **Analyzes** each article asynchronously using a LangGraph AI pipeline: embedding, category classification, entity extraction, topic assignment, summarization, and variance scoring
+4. **Clusters** articles into topics and maintains versioned consensus summaries that evolve as new articles arrive
+5. **Exposes** read-optimized APIs for browsing topics by category, viewing publisher leaderboards, and searching across the corpus
+6. **Renders** all of the above in a server-side-rendered Next.js web app
 
 ---
 
@@ -21,13 +22,16 @@ The core insight is that different outlets covering the same story frame it diff
 | Layer | Technology |
 |-------|-----------|
 | Backend API | FastAPI (Python 3.11+) |
+| RSS Ingestion | `feedparser` + `trafilatura` (full-text extraction) |
 | AI Orchestration | LangGraph with Postgres checkpointing |
-| LLM | Ollama (default: `llama3.1:8b`) or OpenAI |
+| LLM | Ollama (default: `llama3.1:8b`), OpenAI, or OpenRouter |
 | Embeddings | Ollama `all-minilm` (384-d) or Sentence Transformers |
 | Primary Database | PostgreSQL 16 |
 | Vector Store | Qdrant |
 | Message Queue | AWS SQS (LocalStack for local dev) |
 | Frontend | Next.js 15, React 19, TypeScript, Tailwind CSS |
+| Observability | Netra (OpenTelemetry auto-instrumentation) |
+| LLM Evaluation | DeepEval (offline, LLM-as-judge) |
 | Package Manager (Python) | uv |
 
 ---
@@ -39,11 +43,13 @@ storydiff/
 ├── backend/          # FastAPI app + workers (Python package: storydiff)
 │   ├── src/storydiff/
 │   │   ├── ingestion/      # POST /ingest handler, dedupe, SQS publisher
+│   │   ├── rss/            # RSS feed fetcher (feedparser + trafilatura)
 │   │   ├── analysis/       # LangGraph article analysis worker
 │   │   ├── topic_refresh/  # LangGraph topic consensus worker
 │   │   ├── core_api/       # Read endpoints (feed, topics, media, search)
 │   │   ├── db/             # SQLAlchemy models + session
 │   │   └── qdrant/         # Collection setup + payload definitions
+│   ├── feeds.yaml          # RSS feed configuration
 │   ├── alembic/            # Database migrations
 │   └── tests/
 ├── web/              # Next.js 15 frontend (App Router)
@@ -134,6 +140,27 @@ OPENAI_API_KEY=sk-...
 OPENAI_MODEL=gpt-4o-mini
 ```
 
+For [OpenRouter](https://openrouter.ai/) (recommended if running Ollama locally — keeps Ollama for embeddings only):
+
+```env
+LLM_PROVIDER=openai
+OPENAI_BASE_URL=https://openrouter.ai/api/v1
+OPENAI_API_KEY=sk-or-...
+OPENAI_MODEL=google/gemini-2.5-flash
+```
+
+**RSS fetcher** (optional — defaults work out of the box):
+
+```env
+API_BASE_URL=http://127.0.0.1:8000     # ingest endpoint the fetcher posts to
+RSS_POLL_INTERVAL=900                  # seconds between polls in --loop mode
+RSS_FETCH_DELAY=2.0                    # per-domain politeness delay (seconds)
+RSS_USER_AGENT=StoryDiff/0.1          # User-Agent for outbound HTTP requests
+# RSS_FEEDS_CONFIG=                    # optional path to override feeds.yaml
+```
+
+Feed sources are defined in `backend/feeds.yaml`. The default config includes Google News RSS queries for specific topics (West Asia conflict, Kerala elections) and direct outlet feeds (NYT, BBC, Al Jazeera, The Guardian, Reuters, The Hindu, NDTV, Indian Express). Edit that file to add, remove, or reconfigure feeds.
+
 ### 3. Install Backend Dependencies and Run Migrations
 
 ```bash
@@ -184,6 +211,14 @@ cd backend
 uv run python -m storydiff.topic_refresh
 ```
 
+**RSS feed fetcher** (one-shot, or `--loop` for continuous polling):
+```bash
+cd backend
+uv run python -m storydiff.rss                  # poll all feeds once and exit
+uv run python -m storydiff.rss --loop           # poll every 15 minutes indefinitely
+uv run python -m storydiff.rss --loop --interval 600  # custom interval in seconds
+```
+
 **Web frontend:**
 ```bash
 cd web
@@ -209,6 +244,42 @@ All read endpoints return a common envelope `{ data, meta, error }`. Full reques
 | `GET` | `/api/v1/media/{mediaId}` | Publisher detail and breakdown |
 | `GET` | `/api/v1/search` | Keyword, semantic, or hybrid search (`?q=...&mode=keyword\|semantic\|hybrid`) |
 | `GET` | `/health` | Service health check |
+
+---
+
+## RSS Feed Ingestion
+
+The RSS fetcher is a standalone worker that polls configured feeds, extracts full article text, and submits each article to the ingest API.
+
+**How it works:**
+
+1. Reads feed definitions from `backend/feeds.yaml` (URL, outlet slug, category, optional source map)
+2. Parses each feed with `feedparser` to extract title, link, publish date, and snippet
+3. Resolves Google News opaque redirect URLs by decoding the base64-encoded path
+4. Fetches and extracts the full article body using `trafilatura`
+5. Enforces a per-domain rate limit (default: 2 s) between text fetch requests
+6. Posts each article to `POST /api/v1/ingest` — deduplication is handled by the ingest pipeline, so re-running the fetcher is safe
+7. Auto-provisions missing `media_outlets` rows for any new outlet slug
+
+**Feed configuration (`backend/feeds.yaml`):**
+
+```yaml
+feeds:
+  - url: "https://news.google.com/rss/search?q=west+asia+war&hl=en-IN&gl=IN&ceid=IN:en"
+    outlet_slug: google-news
+    category: west-asia-conflict
+    label: "Google News – West Asia"
+    source_map:
+      Reuters: reuters
+      "Al Jazeera": al-jazeera
+
+  - url: "https://feeds.bbci.co.uk/news/world/middle_east/rss.xml"
+    outlet_slug: bbc-news
+    category: west-asia-conflict
+    label: "BBC – Middle East"
+```
+
+Each entry requires `url` and `outlet_slug`. `category`, `label`, and `source_map` are optional. For Google News aggregator feeds, `source_map` maps publisher names to their canonical outlet slugs; unknown sources are auto-slugified.
 
 ---
 
@@ -267,6 +338,45 @@ cd web
 npm run lint
 ```
 
+### LLM Evaluation (DeepEval)
+
+The `backend/tests/eval/` directory contains an offline evaluation suite for the AI pipeline, powered by [DeepEval](https://github.com/confident-ai/deepeval). These tests are **excluded from the standard `pytest` run** and must be invoked explicitly. They call the real LLM and use OpenAI (`gpt-4o-mini`) as an LLM judge, so they incur API costs.
+
+```bash
+cd backend
+export OPENAI_API_KEY=sk-...   # required for DeepEval judge
+uv run pytest tests/eval/ -v   # run all eval tests
+uv run pytest tests/eval/test_consensus.py -v  # run a single flow
+```
+
+| Test file | AI flow evaluated | Metrics |
+|-----------|-------------------|---------|
+| `test_classify.py` | Category classification | Exact-match accuracy, GEval (category appropriateness) |
+| `test_entities.py` | Entity extraction | GEval (completeness + no hallucinated entities) |
+| `test_summary_scores.py` | Article summary + variance scores | SummarizationMetric, HallucinationMetric, GEval (score range validity) |
+| `test_consensus.py` | Consensus summary (RAG) | FaithfulnessMetric, AnswerRelevancyMetric, GEval (neutrality) |
+
+Each test file contains hardcoded synthetic article fixtures. The LLM provider for the system under test is controlled by `LLM_PROVIDER` (same as the analysis worker); the judge LLM is always OpenAI.
+
+---
+
+## Observability (Netra)
+
+StoryDiff integrates [Netra](https://getnetra.ai/) for production observability. When `NETRA_API_KEY` is set, Netra auto-instruments LangGraph nodes, LLM calls, Qdrant queries, SQS operations, SQLAlchemy queries, and FastAPI requests — no manual span creation required.
+
+To enable, add to `backend/.env`:
+
+```env
+NETRA_API_KEY=your-api-key-here
+```
+
+Netra is initialized at startup in three entry points:
+- **API server** (`storydiff/main.py`) — service name `storydiff-api`
+- **Analysis worker** (`storydiff/analysis/worker.py`) — service name `storydiff-analysis-worker`
+- **Topic refresh worker** (`storydiff/topic_refresh/worker.py`) — service name `storydiff-topic-refresh-worker`
+
+When `NETRA_API_KEY` is absent or empty, Netra is not loaded and the application runs normally with no overhead.
+
 ---
 
 ## Database Migrations
@@ -301,6 +411,111 @@ Wipe all local data (Postgres, Qdrant, LocalStack) and start fresh:
 
 ```bash
 docker compose down -v
+```
+
+---
+
+## Deployment
+
+Production runs on AWS Lambda (backend) and Vercel (frontend). The deploy pipeline is fully automated via GitHub Actions — every push to `main` builds Docker images, runs database migrations, and updates the Lambda functions.
+
+### Prerequisites
+
+- [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/install-cliv2.html) configured with credentials that have IAM, Lambda, ECR, SQS, and SSM permissions
+- [Terraform](https://developer.hashicorp.com/terraform/install) ≥ 1.6
+- [uv](https://docs.astral.sh/uv/) (for local dev)
+
+### One-time Bootstrap
+
+**1. Create the Terraform state bucket**
+
+```bash
+aws s3 mb s3://storydiff-tf-state --region us-east-1
+```
+
+**2. Provision ECR repositories first** (needed before images can be pushed)
+
+```bash
+cd infra
+terraform init
+terraform apply -target=aws_ecr_repository.repos
+```
+
+**3. Push initial images** (trigger the GitHub Actions deploy workflow, or push manually)
+
+The deploy workflow will push the first real images. Lambda functions are created with a `:latest` placeholder and will only work after images are pushed.
+
+**4. Provision remaining infrastructure**
+
+```bash
+terraform apply
+```
+
+This creates: Lambda functions, SQS queues + DLQs, IAM roles, SSM parameter placeholders.
+
+**5. Populate SSM secrets**
+
+After `terraform apply`, fill in the real values for each parameter:
+
+```bash
+aws ssm put-parameter --name "/storydiff/database-url" \
+  --value "postgresql+psycopg://user:pass@host:5432/storydiff" \
+  --type SecureString --overwrite
+
+aws ssm put-parameter --name "/storydiff/openai-api-key" \
+  --value "sk-..." --type SecureString --overwrite
+
+aws ssm put-parameter --name "/storydiff/qdrant-url" \
+  --value "https://xxx.qdrant.io" --type SecureString --overwrite
+
+aws ssm put-parameter --name "/storydiff/qdrant-api-key" \
+  --value "..." --type SecureString --overwrite
+
+# Use the queue URLs from `terraform output`
+aws ssm put-parameter --name "/storydiff/sqs-article-analyze-queue-url" \
+  --value "$(terraform output -raw article_analyze_queue_url)" \
+  --type SecureString --overwrite
+
+aws ssm put-parameter --name "/storydiff/sqs-topic-refresh-queue-url" \
+  --value "$(terraform output -raw topic_refresh_queue_url)" \
+  --type SecureString --overwrite
+```
+
+**6. Add GitHub repository secrets**
+
+In your GitHub repo → Settings → Secrets → Actions, add:
+
+| Secret | Value |
+|--------|-------|
+| `AWS_ACCESS_KEY_ID` | AWS access key for the deploy IAM user |
+| `AWS_SECRET_ACCESS_KEY` | AWS secret key |
+| `AWS_REGION` | e.g. `us-east-1` |
+| `ECR_REGISTRY` | ECR registry URL (e.g. `123456789.dkr.ecr.us-east-1.amazonaws.com`) |
+
+**7. Connect Vercel to this repo**
+
+In [Vercel](https://vercel.com), import this repository, set the root directory to `web/`, and add the environment variable:
+
+```
+BACKEND_URL=<value of `terraform output api_function_url`>
+```
+
+### Ongoing Workflow
+
+After bootstrap, everything is automated:
+
+- **Push to `dev`** → runs backend CI (lint + test) and frontend CI (lint + build)
+- **Push to `main`** → runs CI, then builds Docker images, runs Alembic migrations, and deploys all three Lambda functions
+- **Vercel** auto-deploys the frontend on every push to `main`
+
+### Running Migrations Manually
+
+```bash
+aws lambda invoke \
+  --function-name storydiff-api \
+  --payload '{"action":"migrate"}' \
+  --cli-binary-format raw-in-base64-out \
+  /tmp/response.json && cat /tmp/response.json
 ```
 
 ---

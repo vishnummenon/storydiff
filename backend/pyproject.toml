@@ -22,6 +22,11 @@ dependencies = [
     "openai>=1.0,<2",
     "httpx>=0.28,<1",
     "langgraph-checkpoint-postgres>=2.0,<3",
+    "mangum>=0.17,<1",
+    "netra-sdk>=0.1",
+    "feedparser>=6.0,<7",
+    "trafilatura>=2.0,<3",
+    "pyyaml>=6.0,<7",
 ]
 
 [project.optional-dependencies]
@@ -29,7 +34,13 @@ dependencies = [
 embeddings-st = ["sentence-transformers>=3.0,<4"]
 
 [dependency-groups]
-dev = ["pytest>=8", "httpx>=0.28,<1", "moto[sqs]>=5.0,<6"]
+dev = [
+    "pytest>=8",
+    "httpx>=0.28,<1",
+    "moto[sqs]>=5.0,<6",
+    "ruff>=0.15.7",
+    "deepeval>=2.0",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -40,3 +51,4 @@ package = true
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
+addopts = "--ignore=tests/eval"
