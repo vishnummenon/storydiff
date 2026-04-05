@@ -1,0 +1,75 @@
+# StoryDiff RSS Feed Configuration
+# Each entry defines an RSS feed to poll for news articles.
+#
+# Fields:
+#   url          (required) - RSS feed URL
+#   outlet_slug  (required) - media outlet identifier (must match or create a media_outlets row)
+#   category     (optional) - source_category override for articles from this feed
+#   label        (optional) - human-readable description
+#   source_map   (optional) - for aggregator feeds (e.g. Google News), maps source names to outlet slugs
+
+feeds:
+  # --- Google News topic queries ---
+  - url: "https://news.google.com/rss/search?q=west+asia+war&hl=en&gl=US&ceid=US:en"
+    outlet_slug: "google-news"
+    category: "world"
+    label: "West Asia Conflict"
+    source_map:
+      "Reuters": "reuters"
+      "Al Jazeera": "al-jazeera"
+      "BBC News": "bbc"
+      "The Guardian": "the-guardian"
+      "CNN": "cnn"
+      "The New York Times": "nytimes"
+
+  - url: "https://news.google.com/rss/search?q=kerala+elections&hl=en-IN&gl=IN&ceid=IN:en"
+    outlet_slug: "google-news"
+    category: "politics"
+    label: "Kerala Elections"
+    source_map:
+      "The Hindu": "the-hindu"
+      "NDTV": "ndtv"
+      "The Indian Express": "indian-express"
+      "Mathrubhumi": "mathrubhumi"
+      "Manorama Online": "manorama"
+
+  # --- Major outlet feeds ---
+  - url: "https://rss.nytimes.com/services/xml/rss/nyt/MiddleEast.xml"
+    outlet_slug: "nytimes"
+    category: "world"
+    label: "NYT Middle East"
+
+  - url: "https://feeds.bbci.co.uk/news/world/middle_east/rss.xml"
+    outlet_slug: "bbc"
+    category: "world"
+    label: "BBC Middle East"
+
+  - url: "https://www.aljazeera.com/xml/rss/all.xml"
+    outlet_slug: "al-jazeera"
+    category: "world"
+    label: "Al Jazeera - All"
+
+  - url: "https://www.theguardian.com/world/middleeast/rss"
+    outlet_slug: "the-guardian"
+    category: "world"
+    label: "Guardian Middle East"
+
+  - url: "https://www.thehindu.com/news/national/kerala/feeder/default.rss"
+    outlet_slug: "the-hindu"
+    category: "politics"
+    label: "The Hindu Kerala"
+
+  - url: "https://feeds.feedburner.com/ndtvnews-india-news"
+    outlet_slug: "ndtv"
+    category: "politics"
+    label: "NDTV India"
+
+  - url: "http://feeds.reuters.com/reuters/worldNews"
+    outlet_slug: "reuters"
+    category: "world"
+    label: "Reuters World"
+
+  - url: "https://indianexpress.com/section/india/feed/"
+    outlet_slug: "indian-express"
+    category: "politics"
+    label: "Indian Express India"
