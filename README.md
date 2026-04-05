@@ -1,6 +1,6 @@
 # StoryDiff
 
-StoryDiff is a multi-source narrative variance analyzer. It ingests news articles from curated publishers, clusters them into time-aware topic groups using AI, computes narrative variance metrics per article, and serves the results through read-optimized APIs consumed by a Next.js web frontend.
+StoryDiff is a multi-source narrative variance analyzer. It continuously ingests live news articles from RSS feeds across major outlets, clusters them into time-aware topic groups using AI, computes narrative variance metrics per article, and serves the results through read-optimized APIs consumed by a Next.js web frontend.
 
 The core insight is that different outlets covering the same story frame it differently. StoryDiff surfaces those differences — measuring consensus distance, framing polarity, source diversity, and novel claims — so readers can see not just *what* is being reported, but *how* and *from what angle*.
 
@@ -8,11 +8,12 @@ The core insight is that different outlets covering the same story frame it diff
 
 ## What It Does
 
-1. **Ingests** article metadata via a REST endpoint (idempotent, deduplicated)
-2. **Analyzes** each article asynchronously using a LangGraph AI pipeline: embedding, category classification, entity extraction, topic assignment, summarization, and variance scoring
-3. **Clusters** articles into topics and maintains versioned consensus summaries that evolve as new articles arrive
-4. **Exposes** read-optimized APIs for browsing topics by category, viewing publisher leaderboards, and searching across the corpus
-5. **Renders** all of the above in a server-side-rendered Next.js web app
+1. **Fetches** live articles from configured RSS feeds (major outlets + Google News topic feeds) using `feedparser` and `trafilatura` for full-text extraction
+2. **Ingests** each article via a REST endpoint (idempotent, deduplicated by canonical URL and fingerprint)
+3. **Analyzes** each article asynchronously using a LangGraph AI pipeline: embedding, category classification, entity extraction, topic assignment, summarization, and variance scoring
+4. **Clusters** articles into topics and maintains versioned consensus summaries that evolve as new articles arrive
+5. **Exposes** read-optimized APIs for browsing topics by category, viewing publisher leaderboards, and searching across the corpus
+6. **Renders** all of the above in a server-side-rendered Next.js web app
 
 ---
 
@@ -21,8 +22,9 @@ The core insight is that different outlets covering the same story frame it diff
 | Layer | Technology |
 |-------|-----------|
 | Backend API | FastAPI (Python 3.11+) |
+| RSS Ingestion | `feedparser` + `trafilatura` (full-text extraction) |
 | AI Orchestration | LangGraph with Postgres checkpointing |
-| LLM | Ollama (default: `llama3.1:8b`) or OpenAI |
+| LLM | Ollama (default: `llama3.1:8b`), OpenAI, or OpenRouter |
 | Embeddings | Ollama `all-minilm` (384-d) or Sentence Transformers |
 | Primary Database | PostgreSQL 16 |
 | Vector Store | Qdrant |
@@ -41,11 +43,13 @@ storydiff/
 ├── backend/          # FastAPI app + workers (Python package: storydiff)
 │   ├── src/storydiff/
 │   │   ├── ingestion/      # POST /ingest handler, dedupe, SQS publisher
+│   │   ├── rss/            # RSS feed fetcher (feedparser + trafilatura)
 │   │   ├── analysis/       # LangGraph article analysis worker
 │   │   ├── topic_refresh/  # LangGraph topic consensus worker
 │   │   ├── core_api/       # Read endpoints (feed, topics, media, search)
 │   │   ├── db/             # SQLAlchemy models + session
 │   │   └── qdrant/         # Collection setup + payload definitions
+│   ├── feeds.yaml          # RSS feed configuration
 │   ├── alembic/            # Database migrations
 │   └── tests/
 ├── web/              # Next.js 15 frontend (App Router)
@@ -136,6 +140,27 @@ OPENAI_API_KEY=sk-...
 OPENAI_MODEL=gpt-4o-mini
 ```
 
+For [OpenRouter](https://openrouter.ai/) (recommended if running Ollama locally — keeps Ollama for embeddings only):
+
+```env
+LLM_PROVIDER=openai
+OPENAI_BASE_URL=https://openrouter.ai/api/v1
+OPENAI_API_KEY=sk-or-...
+OPENAI_MODEL=google/gemini-2.5-flash
+```
+
+**RSS fetcher** (optional — defaults work out of the box):
+
+```env
+API_BASE_URL=http://127.0.0.1:8000     # ingest endpoint the fetcher posts to
+RSS_POLL_INTERVAL=900                  # seconds between polls in --loop mode
+RSS_FETCH_DELAY=2.0                    # per-domain politeness delay (seconds)
+RSS_USER_AGENT=StoryDiff/0.1          # User-Agent for outbound HTTP requests
+# RSS_FEEDS_CONFIG=                    # optional path to override feeds.yaml
+```
+
+Feed sources are defined in `backend/feeds.yaml`. The default config includes Google News RSS queries for specific topics (West Asia conflict, Kerala elections) and direct outlet feeds (NYT, BBC, Al Jazeera, The Guardian, Reuters, The Hindu, NDTV, Indian Express). Edit that file to add, remove, or reconfigure feeds.
+
 ### 3. Install Backend Dependencies and Run Migrations
 
 ```bash
@@ -186,6 +211,14 @@ cd backend
 uv run python -m storydiff.topic_refresh
 ```
 
+**RSS feed fetcher** (one-shot, or `--loop` for continuous polling):
+```bash
+cd backend
+uv run python -m storydiff.rss                  # poll all feeds once and exit
+uv run python -m storydiff.rss --loop           # poll every 15 minutes indefinitely
+uv run python -m storydiff.rss --loop --interval 600  # custom interval in seconds
+```
+
 **Web frontend:**
 ```bash
 cd web
@@ -211,6 +244,42 @@ All read endpoints return a common envelope `{ data, meta, error }`. Full reques
 | `GET` | `/api/v1/media/{mediaId}` | Publisher detail and breakdown |
 | `GET` | `/api/v1/search` | Keyword, semantic, or hybrid search (`?q=...&mode=keyword\|semantic\|hybrid`) |
 | `GET` | `/health` | Service health check |
+
+---
+
+## RSS Feed Ingestion
+
+The RSS fetcher is a standalone worker that polls configured feeds, extracts full article text, and submits each article to the ingest API.
+
+**How it works:**
+
+1. Reads feed definitions from `backend/feeds.yaml` (URL, outlet slug, category, optional source map)
+2. Parses each feed with `feedparser` to extract title, link, publish date, and snippet
+3. Resolves Google News opaque redirect URLs by decoding the base64-encoded path
+4. Fetches and extracts the full article body using `trafilatura`
+5. Enforces a per-domain rate limit (default: 2 s) between text fetch requests
+6. Posts each article to `POST /api/v1/ingest` — deduplication is handled by the ingest pipeline, so re-running the fetcher is safe
+7. Auto-provisions missing `media_outlets` rows for any new outlet slug
+
+**Feed configuration (`backend/feeds.yaml`):**
+
+```yaml
+feeds:
+  - url: "https://news.google.com/rss/search?q=west+asia+war&hl=en-IN&gl=IN&ceid=IN:en"
+    outlet_slug: google-news
+    category: west-asia-conflict
+    label: "Google News – West Asia"
+    source_map:
+      Reuters: reuters
+      "Al Jazeera": al-jazeera
+
+  - url: "https://feeds.bbci.co.uk/news/world/middle_east/rss.xml"
+    outlet_slug: bbc-news
+    category: west-asia-conflict
+    label: "BBC – Middle East"
+```
+
+Each entry requires `url` and `outlet_slug`. `category`, `label`, and `source_map` are optional. For Google News aggregator feeds, `source_map` maps publisher names to their canonical outlet slugs; unknown sources are auto-slugified.
 
 ---
 
