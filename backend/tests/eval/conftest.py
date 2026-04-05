@@ -9,8 +9,16 @@ Requires OPENAI_API_KEY to be set — DeepEval uses OpenAI as the LLM judge.
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 import pytest
+
+# Load backend/.env so OPENAI_API_KEY (and other vars) are available without
+# needing to export them manually in the shell.
+_env_file = Path(__file__).parents[3] / ".env"
+if _env_file.exists():
+    from dotenv import load_dotenv
+    load_dotenv(_env_file, override=False)
 
 
 def pytest_configure(config: pytest.Config) -> None:

@@ -88,7 +88,7 @@ def test_entity_completeness(llm, extractions):
     from deepeval.metrics import GEval
     from deepeval.test_case import LLMTestCase, LLMTestCaseParams
 
-    from tests.eval.conftest import get_judge_model
+    from .conftest import get_judge_model
 
     metric = GEval(
         name="EntityCompletenessAndPrecision",

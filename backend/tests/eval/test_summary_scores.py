@@ -92,7 +92,7 @@ def test_summary_faithfulness(outputs):
     from deepeval.metrics import HallucinationMetric, SummarizationMetric
     from deepeval.test_case import LLMTestCase
 
-    from tests.eval.conftest import get_judge_model
+    from .conftest import get_judge_model
 
     judge = get_judge_model()
     sum_metric = SummarizationMetric(threshold=0.5, model=judge)
@@ -129,7 +129,7 @@ def test_score_structure(outputs):
     from deepeval.metrics import GEval
     from deepeval.test_case import LLMTestCase, LLMTestCaseParams
 
-    from tests.eval.conftest import get_judge_model
+    from .conftest import get_judge_model
 
     metric = GEval(
         name="ScoreStructureValidity",

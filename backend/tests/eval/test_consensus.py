@@ -147,7 +147,7 @@ def test_consensus_faithfulness(consensus_outputs):
     from deepeval.metrics import FaithfulnessMetric
     from deepeval.test_case import LLMTestCase
 
-    from tests.eval.conftest import get_judge_model
+    from .conftest import get_judge_model
 
     metric = FaithfulnessMetric(threshold=0.5, model=get_judge_model())
     scores = []
@@ -172,7 +172,7 @@ def test_consensus_relevancy(consensus_outputs):
     from deepeval.metrics import AnswerRelevancyMetric
     from deepeval.test_case import LLMTestCase
 
-    from tests.eval.conftest import get_judge_model
+    from .conftest import get_judge_model
 
     metric = AnswerRelevancyMetric(threshold=0.5, model=get_judge_model())
     scores = []
@@ -196,7 +196,7 @@ def test_consensus_neutrality(consensus_outputs):
     from deepeval.metrics import GEval
     from deepeval.test_case import LLMTestCase, LLMTestCaseParams
 
-    from tests.eval.conftest import get_judge_model
+    from .conftest import get_judge_model
 
     metric = GEval(
         name="ConsensusNeutrality",

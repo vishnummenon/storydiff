@@ -163,7 +163,7 @@ def test_classification_geval(llm, classifications):
     from deepeval.metrics import GEval
     from deepeval.test_case import LLMTestCase, LLMTestCaseParams
 
-    from tests.eval.conftest import get_judge_model
+    from .conftest import get_judge_model
 
     metric = GEval(
         name="CategoryAppropriateness",
